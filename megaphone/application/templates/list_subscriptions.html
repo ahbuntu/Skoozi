@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block style_block %}
+    <style type="text/css">
+        table.table { width: 60%; }
+    </style>
+{% endblock %}
+
+{% block content %}
+
+    <h1 id="">All Subscriptions</h1>
+    <div>&nbsp;</div>
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>Sub ID</th>
+                <th>Query</th>
+                <th>Expiry Time</th>
+                <th>State</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for subscription in subscriptions %}
+                <tr>
+                    <td>{{ subscription[0] }}</td>
+                    <td>{{ subscription[1] }}</td>
+                    <td>{{ subscription[2] }}</td>
+                    <td>{{ subscription[3] }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4">No subscriptions yet</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+{% endblock content %}

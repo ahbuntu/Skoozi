@@ -1,0 +1,57 @@
+<form id="search-questions-form" class="well"
+    action="{{ url_for('search_questions') }}" method="post" accept-charset="utf-8">
+        {{ search_form.hidden_tag() }}
+        <div class="form-group">
+            <label for="address_geolocation">Search origin address</label>
+            <input id="address_geolocation" name="address_geolocation" type="text" onblur="findAddressLatLng()">
+            <button class="btn btn-xs" type="button" onclick="findAddressLatLng()" >Show on map</button>
+        </div>
+
+        <div class="form-group">
+            <label for="address_geolocation">Search radius (in km) &nbsp;</label>
+{#            <div class="control-label">{{ search_form.distance_in_km.label }}</div>#}
+            {{ search_form.distance_in_km|safe }}
+            {% if search_form.distance_in_km.errors %}
+            <ul class="errors">
+                {% for error in search_form.distance_in_km.errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        <div>&nbsp;</div>
+        <div class="control-group">
+            <div class="controls">
+                <input class="btn btn-primary btn-sm" type="submit" value="Search"/>
+                <button class="btn btn-sm" id="cancel" data-dismiss="modal">Clear</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+{#            <div class="control-label">{{ search_form.latitude.label }}</div>#}
+            <div class="controls">
+                {{ search_form.latitude(type="hidden")|safe }}
+                {% if search_form.latitude.errors %}
+                <ul class="errors">
+                    {% for error in search_form.latitude.errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+        <div class="control-group">
+{#            <div class="control-label">{{ search_form.longitude.label }}</div>#}
+            <div class="controls">
+                {{ search_form.longitude(type="hidden")|safe }}
+                {% if search_form.longitude.errors %}
+                <ul class="errors">
+                    {% for error in search_form.longitude.errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+</form>
+

@@ -1,0 +1,44 @@
+<div class="modal fade" id="new-answer-modal">
+    <div class="modal-dialog">
+    <div class="modal-content">
+    <div class="modal-header">
+        <button class="close" data-dismiss="modal">&times;</button>
+        <h3>Add an Answer</h3>
+    </div>
+    <div class="modal-body">
+        <div class="row">
+            <div class="col-md-6">
+                <form id="new-answer-form" action="{{ url_for('new_answer', question_id=question.key.id()) }}" method="post" accept-charset="utf-8">
+                        {{ form.hidden_tag() }}
+                        <div class="form-group">
+                            {{ form.content.label(class_="sr-only") }}
+                            {{ form.content(placeholder="Enter details", rows='7')|safe }}
+                            {% if form.content.errors %}
+                            <ul class="errors">
+                                {% for error in form.content.errors %}
+                                <li>{{ error }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                        <div class="form-group">
+                            <input id="location" name="location" type="hidden"/>
+                        </div>
+                        <div>&nbsp;</div>
+                        <input class="btn btn-primary btn-sm" type="submit" value="Post"/>
+                        <button class="btn btn-sm" data-dismiss="modal">Cancel</button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <div id="map-canvas-answer"></div>
+                <div>&nbsp;</div>
+                <label class="sr-only" for="address_geolocation_answer">Enter address</label>
+                <input id="address_geolocation_answer" name="address_geolocation_answer" type="text" placeholder="Enter address">
+                <button class="btn btn-default btn-xs" onclick="findAddress()">Find on map</button>
+                <button class="btn btn-default btn-xs" onclick="getgeolocation()">Get current location</button>
+            </div>
+        </div>
+    </div>
+    </div>
+    </div>
+</div>

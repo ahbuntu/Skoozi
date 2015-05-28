@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block style_block %}
+    <style type="text/css">
+        table.table { width: 100%; }
+    </style>
+{% endblock %}
+
+{% block content %}
+
+    {% include 'includes/notices.html' %}
+
+    <h1 id="">Question Activity</h1>
+    <div class="well">
+        {{ question.content }}
+        {% if accepted_answer is not none %}
+            <div class="control-group well">
+                <div class="control-label">Accepted Answer</div>
+                <div>&nbsp;</div>
+                <div class="controls">
+                    {{ accepted_answer.content|safe }}
+                </div>
+            </div>
+        {% endif %}
+    </div>
+    <div>&nbsp;</div>
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+{#                <th>ID</th>#}
+                <th>Author</th>
+                <th style="width:50%;">Content</th>
+                <th>Replied on</th>
+                <th>Location</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="answers">
+            {% for answer in answers %}
+                {% include 'includes/answer.html' %}
+            {% else %}
+                <tr id="empty"><td colspan="5">No answers yet</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p>
+        {% if user %}
+            <a class="btn btn-primary" data-toggle="modal" data-target="#new-answer-modal">
+                <i class="icon-plus-sign icon-white"></i>
+                Post an answer
+            </a>
+        {% else %}
+            <h4><a href={{ login_url }}>Login to post an answer</a></h4>
+        {% endif %}
+    </p>
+
+
+{% endblock content %}
+
+
+{% block footer %}
+    {% include 'new_answer.html' %} {# pull in new_answer form (modal dialog) #} 
+{% endblock footer %}
+
+{% block tail_script %}
+    <script src="https://maps.googleapis.com/maps/api/js"></script>
+    <script>
+        var map, marker, currentLatLng;
+        function displayMap() {
+            var mapCanvas = document.getElementById('map-canvas-answer');
+            var mapOptions = {
+                center: currentLatLng,
+                disableDefaultUI: true,
+                zoom: 13,
+                mapTypeId: google.maps.MapTypeId.ROADMAP
+            };
+            map = new google.maps.Map(mapCanvas, mapOptions);
+            marker = new google.maps.Marker({
+                position: currentLatLng,
+                map: map,
+                draggable: true,
+                title:"Me"
+            });
+            map.panBy(-125,-100);
+        }
+        function findAddress() {
+            var inputAddress = $("#address_geolocation_answer").val();
+            if (!inputAddress) {
+                alert("Please enter address.");
+                return;
+            }
+            var geocoder = new google.maps.Geocoder();
+            geocoder.geocode({
+                "address": inputAddress
+            }, function(results, status) {
+                if (status == google.maps.GeocoderStatus.OK) {
+                    var markerLatLng = (results[0].geometry.location); //LatLng
+                    marker.setPosition(markerLatLng);
+                    map.setCenter(markerLatLng);
+                    $('#location').val(marker.getPosition().toUrlValue());
+                    map.panBy(-125,-100);
+                } else {
+                    alert('Geocode was not successful for the following reason: ' + status);
+                }
+            });
+        }
+        function getgeolocation() {
+            if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(FormHelpers.geosuccess, FormHelpers.geoerror);
+            } else {
+                alert('Geolocation not supported. Use the address instead');
+            }
+        }
+        var FormHelpers = {
+            geosuccess: function (position) {
+                $('#location').val(position.coords.latitude + "," +position.coords.longitude);
+                currentLatLng = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+                displayMap();
+            },
+            geoerror: function (msg) {
+                alert(msg);
+            },
+            validate: function (form, evt) {
+                // Form validation for modal dialog
+                var answer_content = form.find('#content').val();
+                if (!(answer_content)) {
+                    evt.preventDefault();
+                    Utils.renderFieldErrorTooltip('#content', 'Content is required', 'right');
+                }
+                var answer_loc = form.find('#location').val();
+                if (!(answer_loc_lat)) {
+                    evt.preventDefault();
+                    Utils.renderFieldErrorTooltip('#map-canvas-answer', 'Location is required', 'left');
+                }
+            },
+            init: function () {
+                var self = this;
+                if (navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(self.geosuccess, self.geoerror);
+                } else {
+                  alert('Geolocation not supported');
+                }
+                var answer_form = $('#new-answer-form');
+                answer_form.on('submit', function (evt) {
+                    self.validate(answer_form, evt)
+                });
+            }
+        };
+        $(document).ready(function() {
+            FormHelpers.init();
+        });
+    </script>
+{% endblock tail_script %}

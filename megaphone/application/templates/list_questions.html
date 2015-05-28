@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block style_block %}
+    <style type="text/css">
+        table.table { width: 100%; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    {% include 'includes/notices.html' %}
+
+    <h1 class="page-header">Nearby Questions</h1>
+
+    <div>&nbsp;</div>
+    <p>
+        {% if user %}
+            <h3><a href="{{ url_for('list_questions_for_user') }}">Ask a new question</a></h3>
+        {% else %}
+            <h3><a href="{{ url_for('login') }}">Login to ask a question</a></h3>
+        {% endif %}
+    </p>
+    <div>&nbsp;</div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <table class="table table-bordered table-striped">
+                <thead>
+                    <tr>
+        {#                <th>ID</th>#}
+                        <th>Author</th>
+                        <th>Content</th>
+                        <th>Asked on</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for question in questions %}
+                        {% set question_id = question.key.id() %}
+                        <tr>
+        {#                    <td>{{ question_id }}</td>#}
+                            <td>{{ question.added_by }}</td>
+                            <td><a href="{{ url_for('answers_for_question', question_id=question_id) }}">
+                                    {{ question.content }}
+                                </a>
+                            </td>
+                            <td>{{ question.timestamp.strftime('%c') }}</td>
+                            <td><a href="{{ question.formatted_location }}" target="_blank">(open)</a></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5">No questions yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="col-md-6">
+            <div id="map-canvas" ></div>
+            <div>&nbsp;</div>
+            {% include 'search_questions.html' %}
+        </div>
+
+    </div>
+
+{% endblock content %}
+
+
+{% block footer %}
+    {% include 'new_question.html' %} {# pull in new_question form (modal dialog) #} 
+{% endblock footer %}
+
+
+{% block tail_script %}
+    <script src="https://maps.googleapis.com/maps/api/js"></script>
+    <script src="/static/js/questions_mapper.js"> </script>
+
+    <!-- Hack: move this to the search_questions include? -->
+    <script type="text/javascript" charset="utf-8">
+        var FormHelpers = {
+            validate: function (form, evt) {
+                // Form validation for modal dialog
+                var search_address = form.find('#address_geolocation').val();
+                if (!(search_address)) {
+                    evt.preventDefault();
+                    Utils.renderFieldErrorTooltip('#address_geolocation', 'Address is required', 'right');
+                }
+                var search_radius = form.find('#distance_in_km').val();
+                if (!(search_radius)) {
+                    evt.preventDefault();
+                    Utils.renderFieldErrorTooltip('#distance_in_km', 'Radius is required', 'right');
+                }
+            },
+            init: function () {
+                var self = this;
+                var search_form = $('#search-questions-form');
+                search_form.on('submit', function (evt) {
+                    self.validate(search_form, evt);
+                });
+            }
+        };
+
+        $(document).ready(function() {
+            $("#cancel").click(function() {
+                window.location.replace('{{ url_for('list_questions') }}');
+                // window.location.href = '{{ url_for('list_questions') }}';
+                return false;
+            });
+
+            FormHelpers.init();
+        });
+
+
+    </script>
+{% endblock tail_script %}

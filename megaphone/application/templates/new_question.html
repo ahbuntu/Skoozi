@@ -1,0 +1,45 @@
+<div class="modal fade" id="new-question-modal" xmlns="http://www.w3.org/1999/html">
+    <div class="modal-dialog">
+    <div class="modal-content">
+    <div class="modal-header">
+        <button class="close" data-dismiss="modal">&times;</button>
+        <h3>Ask a Question</h3>
+    </div>
+    <div class="modal-body">
+        <div class="row">
+            <div class="col-md-6">
+                <form id="new-question-form" action="{{ url_for('new_question') }}" method="post" accept-charset="utf-8">
+                    {{ form.hidden_tag() }}
+                    <div class="form-group">
+                        {{ form.content.label(class_="sr-only") }}
+                        {{ form.content(placeholder="Enter details", rows='7')|safe }}
+                        {% if form.content.errors %}
+                        <ul class="errors">
+                            {% for error in form.content.errors %}
+                            <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <input id="location" name="location" type="hidden"/>
+                    </div>
+                    <div>&nbsp;</div>
+                    <input class="btn btn-primary btn-sm" type="submit" value="Post"/>
+                    <button class="btn btn-sm" data-dismiss="modal">Cancel</button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <div id="map-canvas-question"></div>
+                <div>&nbsp;</div>
+                <label class="sr-only" for="address_geolocation">Enter address</label>
+                <input id="address_geolocation_question" name="address_geolocation_question" type="text" placeholder="Enter address">
+                <button class="btn btn-default btn-xs" onclick="findAddress()">Find on map</button>
+                <button class="btn btn-default btn-xs" onclick="getgeolocation()">Get current location</button>
+            </div>
+        </div>
+    </div>
+    </div>
+    </div>
+</div>
+

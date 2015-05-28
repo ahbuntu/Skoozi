@@ -1,0 +1,20 @@
+{% set answer_id = answer.key.id() %}
+<tr>
+{#    <td class="answer_td" style="display:none;">{{ answer_id }}</td>#}
+    <td class="answer_td" style="display:none;">{{ answer.added_by }}</td>
+    <td class="answer_td" style="display:none;">{{ answer.content }}</td>
+    <td class="answer_td" style="display:none;">{{ answer.timestamp.strftime('%c') }}</td>
+    <td class="answer_td" style="display:none;"><a href="{{ answer.formatted_location }}" target="_blank">(open)</a></td>
+    {% if question.accepted_answer_key is none %}
+        <td class="answer_td" style="display:none;">
+            <form method="post" action="{{ url_for('accept_answer', safe_answer_key=answer.key.urlsafe()
+) }}">
+                <button class="btn btn-success btn-sm">Accept</button>
+            </form>
+        </td>
+    {% elif question.accepted_answer_key == answer.key %}
+        <td><strong>Accepted</strong></td>
+    {%  else  %}
+        <td>&nbsp;</td>
+    {% endif %}
+</tr>

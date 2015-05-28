@@ -1,0 +1,31 @@
+
+/* Main stylesheet */
+
+/* @section forms */
+.btn.cancel { margin-left: 0.5rem; }
+.nowrap { white-space: nowrap; }
+
+/* Your customizations here */
+#map-canvas {
+    width:  555px;
+    height: 400px;
+}
+
+#map-canvas-profile {
+    width:  400px;
+    height: 300px;
+}
+
+#map-canvas-question {
+    width:  250px;
+    height: 150px;
+}
+
+#map-canvas-answer {
+    width:  250px;
+    height: 150px;
+}
+
+#content{
+    width: 100%
+}

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block style_block %}
+    <style type="text/css">
+        table.table { width: 60%; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <h1 class="page-header">Welcome {{ user }}</h1>
+    <div>&nbsp;</div>
+    {% if prospective_user is none %}
+        <h3>Notification location is not set</h3>
+    {% else %}
+        <h3>Notification location</h3>
+    {% endif %}
+    <div class="row">
+        <div class="col-md-6">
+            <div class="well">
+                <h5><b>Drag the marker to select a new location or search for a new address.</b></h5>
+                <p>
+                    <label class="sr-only" for="address_geolocation">Enter address</label>
+                    <input id="address_geolocation" name="address_geolocation" type="text" placeholder="Enter address">
+                    <button class="btn btn-default" onclick="findAddress()">Find on map</button>
+                    <button class="btn btn-default" onclick="getgeolocation()">Get current location</button>
+                <p>
+                <div>&nbsp;</div>
+                <div>&nbsp;</div>
+                <h5><b>Click the button to receive notifications for new questions near you.</b></h5>
+                <p>
+                    <form class="form-inline" id="post-user-form" method="post" action="{{ url_for('user_profile') }}">
+                        <div class="form-group">
+                            <input id="origin_location" name="origin_location" type="hidden"/>
+                        </div>
+                        {% if prospective_user is none %}
+                        <div class="form-group">
+                            <label> Notification radius (km)</label>
+                            <input id="notification_radius_in_km" name="notification_radius_in_km" type="number" value="100"/>
+                        </div>
+                        <button class="btn btn-primary">Set location</button>
+                        {% else %}
+                        <div class="form-group">
+                            <label> Notification radius (km)</label>
+                            <input id="notification_radius_in_km" name="notification_radius_in_km" type="number" value={{ prospective_user.notification_radius_in_km }}>
+                        </div>
+                        <button class="btn btn-primary">Update</button>
+                        {% endif %}
+                    </form>
+                </p>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div id="map-canvas-profile"></div>
+        </div>
+    </div>
+
+    <div>&nbsp;</div>
+    <div class="row">
+        <div class="col-md-6">
+            <h3>Recent Activity</h3>
+            <h4><a href="{{ url_for('list_questions_for_user') }}">{{ question_count }} questions</a> asked.</h4>
+            <h4>{{ answer_count }} answers provided.</h4>
+        </div>
+    </div>
+{% endblock content %}
+
+{% block tail_script %}
+    <script src="https://maps.googleapis.com/maps/api/js">
+    </script>
+    <script>
+        var profileMapMarker;
+        var map;
+        function displayonmap(homeLatLng) {
+            var mapCanvas = document.getElementById('map-canvas-profile');
+            var mapOptions = {
+              center: homeLatLng,
+              zoom: 13,
+              mapTypeId: google.maps.MapTypeId.ROADMAP
+            };
+            map = new google.maps.Map(mapCanvas, mapOptions);
+            // To add the marker to the map, use the 'map' property
+            profileMapMarker = new google.maps.Marker({
+                position: homeLatLng,
+                map: map,
+                draggable: true,
+                title:"Me"
+            });
+
+            google.maps.event.addListener(profileMapMarker, 'dragstart', function() {
+                $('#origin_location').val("");
+            });
+
+            google.maps.event.addListener(profileMapMarker, 'dragend', function() {
+                $('#origin_location').val(profileMapMarker.getPosition().toUrlValue());
+            });
+        }
+
+        function geosuccess(position) {
+            displayonmap(new google.maps.LatLng(position.coords.latitude, position.coords.longitude));
+            $('#origin_location').val(position.coords.latitude + "," +position.coords.longitude);
+        }
+        function geoerror(msg) {
+            alert(msg);
+        }
+        function getgeolocation() {
+            if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(geosuccess, geoerror);
+            } else {
+                alert('Geolocation not supported. Use the address instead');
+            }
+        }
+
+        var FormHelpers = {
+            init: function () {
+                var self = this;
+                var location_form = $('#post-user-form');
+                location_form.on('submit', function (evt) {
+                    //alert($('#origin_location').val());
+                });
+            }
+        };
+        $(document).ready(function() {
+            {% if prospective_user is none %}
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(geosuccess, geoerror);
+                } else {
+                    alert('Geolocation not supported');
+                }
+            {% else %}
+                displayonmap(new google.maps.LatLng( {{ prospective_user.origin_location.lat }},{{ prospective_user.origin_location.lon }} ));
+                $('#origin_location').val({{ prospective_user.origin_location.lat }} + "," + {{ prospective_user.origin_location.lon }});
+            {% endif %}
+            //getgeolocation();
+            FormHelpers.init();
+        });
+        function findAddress() {
+            var inputAddress = $("#address_geolocation").val();
+            if (!inputAddress) {
+                alert("Please enter address.");
+                return;
+            }
+            var geocoder = new google.maps.Geocoder();
+            geocoder.geocode({
+                "address": inputAddress
+            }, function(results, status) {
+                if (status == google.maps.GeocoderStatus.OK) {
+                    var markerLatLng = (results[0].geometry.location); //LatLng
+                    profileMapMarker.setPosition(markerLatLng);
+                    map.setCenter(markerLatLng);
+                    $('#origin_location').val(profileMapMarker.getPosition().toUrlValue());
+                } else {
+                    alert('Geocode was not successful for the following reason: ' + status);
+                }
+
+            });
+        }
+    </script>
+
+{% endblock tail_script %}
