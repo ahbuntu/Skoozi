@@ -1,4 +1,4 @@
-# ECE1779 Project #2: Megaphone
+# Skoozi
 
 _A location-based, community-driven question and answer service built atop Google App Engine._
 
