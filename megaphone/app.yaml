@@ -1,4 +1,4 @@
-application: valued-pact-89315
+application: skoozi-959
 version: 1
 runtime: python27
 api_version: 1
@@ -17,6 +17,10 @@ libraries:
   version: "2.6"
 - name: markupsafe
   version: "0.15"
+- name: pycrypto
+  version: latest
+- name: endpoints
+  version: "1.0"
 
 inbound_services:
 - warmup
@@ -26,23 +30,36 @@ handlers:
 - url: /favicon.ico
   static_files: application/static/img/favicon.ico
   upload: application/static/img/favicon.ico
+  secure: always
 
 - url: /robots.txt
   static_files: application/static/robots.txt
   upload: application/static/robots.txt
+  secure: always
 
 - url: /gae_mini_profiler/static
   static_dir: lib/gae_mini_profiler/static
+  secure: always
 
 - url: /gae_mini_profiler/.*
   script: lib.gae_mini_profiler.main.application
+  secure: always
 
 - url: /static
   static_dir: application/static
+  secure: always
+
+#Endpoints handler
+- url: /_ah/spi/.*
+  script: main.application
+  secure: always
 
 - url: .*
   script: run.application.app
+  secure: always
 
 - url: /_ah/queue/deferred
   script: google.appengine.ext.deferred.deferred.application
   login: admin
+  secure: always
+#  script: run.application.app
