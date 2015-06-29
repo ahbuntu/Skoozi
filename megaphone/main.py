@@ -21,7 +21,7 @@ from protorpc import remote
 from google.appengine.ext import ndb, db
 from google.appengine.api import users, search
 
-# https://apis-explorer.appspot.com/apis-explorer/?base=http%3A%2F%2Flocalhost%3A8282%2F_ah%2Fapi#p/skooziqna/v1/
+# https://apis-explorer.appspot.com/apis-explorer/?base=http%3A%2F%2Flocalhost%3A8282%2F_ah%2Fapi#p/skooziqna/v0.1/
 package = 'Skoozi'
 RAISE_UNAUTHORIZED = False
 ALL_QUESTIONS_INDEX = 'all_questions'
@@ -48,9 +48,9 @@ def add_question_to_search_index(question_key):
             ])
     index.put(document)
 
-@endpoints.api(name='skooziqna', version='v1')
+@endpoints.api(name='skooziqna', version='v0.1')
 class SkooziQnAApi(remote.Service):
-    """SkooziQnAAPI v1."""
+    """SkooziQnAAPI v0.1"""
 
     @endpoints.method(message_types.VoidMessage, models.GreetingCollection,
                     path='hellogreeting', http_method='GET', name='greetings.listGreeting')
