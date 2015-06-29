@@ -197,3 +197,5 @@ class SkooziQnAApi(remote.Service):
         return return_list
 
 application = endpoints.api_server([SkooziQnAApi])
+# Generate Android client library
+# python "C:\Program Files (x86)\Google\google_appengine\endpointscfg.py" get_client_lib java -bs gradle main.SkooziQnAApi
