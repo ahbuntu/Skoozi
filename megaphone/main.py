@@ -53,8 +53,7 @@ class SkooziQnAApi(remote.Service):
     """SkooziQnAAPI v1."""
 
     @endpoints.method(message_types.VoidMessage, models.GreetingCollection,
-                    path='hellogreeting', http_method='GET',
-                    name='greetings.listGreeting')
+                    path='hellogreeting', http_method='GET', name='greetings.listGreeting')
     def greetings_list(self, unused_request):
         return STORED_GREETINGS
 
@@ -63,8 +62,7 @@ class SkooziQnAApi(remote.Service):
         id=messages.IntegerField(1, variant=messages.Variant.INT32))
 
     @endpoints.method(ID_RESOURCE, models.Greeting,
-                    path='hellogreeting/{id}', http_method='GET',
-                    name='greetings.getGreeting')
+                    path='hellogreeting/{id}', http_method='GET', name='greetings.getGreeting')
     def greeting_get(self, request):
         try:
             # test = helpers.api_get_questions()
@@ -76,8 +74,7 @@ class SkooziQnAApi(remote.Service):
 
 
     @endpoints.method(models.QuestionMessage, models.PostResponse,
-                    path='question/insert', http_method='POST',
-                    name='question.insert')
+                    path='question/insert', http_method='POST', name='question.insert')
     def question_insert(self, request):
         # TODO: move this to a decorator maybe?
         # https://cloud.google.com/appengine/docs/python/endpoints/auth
@@ -94,7 +91,7 @@ class SkooziQnAApi(remote.Service):
             added_by = user,
             content = request.content,
             # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
-            timestamp = datetime.fromtimestamp(request.timestampUTCsec),
+            timestamp = datetime.fromtimestamp(request.timestamp_unix),
             location = ndb.GeoPt(request.locationLat, request.locationLon)
         )
         question_key = question.put()
@@ -110,8 +107,7 @@ class SkooziQnAApi(remote.Service):
         radius_km=messages.FloatField(3))
 
     @endpoints.method(NEARBY_ID_RESOURCE, models.QuestionMessageCollection,
-                    path='questions/list', http_method='GET',
-                    name='questions.list')
+                    path='questions/list', http_method='GET', name='questions.list')
     def questions_list(self, request):
         query_lat = float(request.lat) if request.lat else 0
         query_lon = float(request.lon) if request.lon else 0
@@ -127,10 +123,10 @@ class SkooziQnAApi(remote.Service):
         q_list = []
         for question in questions:
             question_message = models.QuestionMessage(
+                id_urlsafe = question.key.urlsafe(),
                 email = question.added_by.email(),
                 content = question.content,
-                # date_time_milis = time.mktime(datetimeobj.timetuple()) * 1000 + datetimeobj.microsecond / 1000
-                timestampUTCsec = int(time.mktime(question.timestamp.timetuple())),
+                timestamp_unix = int(time.mktime(question.timestamp.timetuple())),
                 locationLat = question.location.lat,
                 locationLon = question.location.lon
             )
@@ -142,8 +138,7 @@ class SkooziQnAApi(remote.Service):
         #     print("schema: %s", index.schema)
 
     @endpoints.method(models.AnswerMessage, models.PostResponse,
-                    path='answer/insert', http_method='POST',
-                    name='answer.insert')
+                    path='answer/insert', http_method='POST', name='answer.insert')
     def answer_insert(self, request):
         # TODO: move this to a decorator maybe?
         # https://cloud.google.com/appengine/docs/python/endpoints/auth
@@ -161,7 +156,7 @@ class SkooziQnAApi(remote.Service):
             added_by = user,
             content = request.content,
             # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
-            timestamp = datetime.fromtimestamp(request.timestampUTCsec),
+            timestamp = datetime.fromtimestamp(request.timestamp_unix),
             location = ndb.GeoPt(request.locationLat, request.locationLon),
             parent = question_key
         )
@@ -175,8 +170,7 @@ class SkooziQnAApi(remote.Service):
         id=messages.StringField(1))
 
     @endpoints.method(Q_ID_RESOURCE, models.AnswerMessageCollection,
-                    path='answers_for_question', http_method='GET',
-                    name='question.listAnswers')
+                    path='answers_for_question', http_method='GET',name='question.listAnswers')
     def question_answers_list(self, request):
         # question_key = ndb.Key(urlsafe = 'ag5kZXZ-c2tvb3ppLTk1OXIaCxINUXVlc3Rpb25Nb2RlbBiAgICAgOidCgw')
         question_key = ndb.Key(urlsafe = request.id)
@@ -184,11 +178,12 @@ class SkooziQnAApi(remote.Service):
         a_list = []
         for answer in q_answers:
             answer_message = models.AnswerMessage(
+                id_urlsafe = answer.key.urlsafe(),
                 question_urlsafe = question_key.urlsafe(),
                 email = answer.added_by.email(),
                 content = answer.content,
                 # date_time_milis = time.mktime(datetimeobj.timetuple()) * 1000 + datetimeobj.microsecond / 1000
-                timestampUTCsec = int(time.mktime(answer.timestamp.timetuple())),
+                timestamp_unix = int(time.mktime(answer.timestamp.timetuple())),
                 locationLat = answer.location.lat,
                 locationLon = answer.location.lon
             )

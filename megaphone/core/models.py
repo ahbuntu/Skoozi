@@ -31,22 +31,24 @@ class AnswerModel(ndb.Model):
 
 class QuestionMessage(messages.Message):
     """Post that stores a question """
+    id_urlsafe = messages.StringField(1, required=False)
     # TODO: figure out if the email is really required
-    email = messages.StringField(1, required=True)
-    content = messages.StringField(2, required=True)
-    timestampUTCsec = messages.IntegerField(3, required=True)
-    locationLat = messages.FloatField(4, required=True)
-    locationLon = messages.FloatField(5, required=True)
+    email = messages.StringField(2, required=True)
+    content = messages.StringField(3, required=True)
+    timestamp_unix = messages.IntegerField(4, required=True)
+    locationLat = messages.FloatField(5, required=True)
+    locationLon = messages.FloatField(6, required=True)
 
 class AnswerMessage(messages.Message):
     """ Post that stores an answer """
+    id_urlsafe = messages.StringField(1, required=False)
+    question_urlsafe = messages.StringField(2, required=True)
     # TODO: figure out if the email is really required
-    question_urlsafe = messages.StringField(1, required=True)
-    email = messages.StringField(2, required=True)
-    content = messages.StringField(3, required=True)
-    timestampUTCsec = messages.IntegerField(4, required=True)
-    locationLat = messages.FloatField(5, required=True)
-    locationLon = messages.FloatField(6, required=True)
+    email = messages.StringField(3, required=True)
+    content = messages.StringField(4, required=True)
+    timestamp_unix = messages.IntegerField(5, required=True)
+    locationLat = messages.FloatField(6, required=True)
+    locationLon = messages.FloatField(7, required=True)
 
 class PostResponse(messages.Message):
     post_key = messages.StringField(1)
