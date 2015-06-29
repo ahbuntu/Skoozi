@@ -1,6 +1,12 @@
 # Python Exclusions
 *.pyc
 
+# PyCharm
+megaphone/.idea/*
+megaphone/.idea/libraries/*.xml
+
+megaphone/api_client/
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
@@ -44,3 +50,4 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+
