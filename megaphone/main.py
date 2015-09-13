@@ -4,15 +4,13 @@ Defined here are the ProtoRPC messages needed to define Schemas for methods
 as well as those methods defined in an API.
 """
 
+import endpoints
+import logging
+import calendar, time
 # from application import helpers
-
 # from application import models
 from core import models
-
 from datetime import datetime
-import calendar, time
-
-import endpoints
 
 from protorpc import messages
 from protorpc import message_types
@@ -33,6 +31,7 @@ STORED_GREETINGS = models.GreetingCollection(items=[
     models.Greeting(message='good job')
 ])
 
+
 def add_question_to_search_index(question_key):
     """Build a custom search index for geo-based searched."""
     index = search.Index(name=ALL_QUESTIONS_INDEX)
@@ -46,7 +45,30 @@ def add_question_to_search_index(question_key):
             search.DateField(name='timestamp', value=question.timestamp), # watch out - no time information in search index
             search.GeoField(name='location', value=search.GeoPoint(question.location.lat, question.location.lon))
             ])
-    index.put(document)
+
+    # Index the document.
+    try:
+        index.put(document)
+        logging.info("def: {} added search document for Question key {}".format(add_question_to_search_index.__name__, question_key))
+    except search.PutError, e:
+        result = e.results[0]
+        if result.code == search.OperationResult.TRANSIENT_ERROR:
+            # possibly retry indexing result.object_id
+            logging.error("def: {} error while adding to search index, with result code {}".format(add_question_to_search_index.__name__, result.code))
+    except search.Error, e:
+        # log the failure
+        logging.exception(e)
+
+
+# @admin_required
+# FIXME: normal users shouldn't be able to execute this
+def rebuild_question_search_index():
+    """Used to generate/build the geo-search index."""
+
+    logging.info("Rebuilding question search index")
+    questions = models.QuestionModel.query()
+    [add_question_to_search_index(q) for q in questions]
+
 
 @endpoints.api(name='skooziqna', version='v0.1')
 class SkooziQnAApi(remote.Service):
@@ -70,7 +92,6 @@ class SkooziQnAApi(remote.Service):
         except (IndexError, TypeError):
             raise endpoints.NotFoundException('Greeting %s not found.' %
                                         (request.id,))
-
 
 
     @endpoints.method(models.QuestionMessage, models.PostResponse,
@@ -106,17 +127,24 @@ class SkooziQnAApi(remote.Service):
         lon=messages.FloatField(2),
         radius_km=messages.FloatField(3))
 
+
     @endpoints.method(NEARBY_ID_RESOURCE, models.QuestionMessageCollection,
                     path='questions/list', http_method='GET', name='questions.list')
     def questions_list(self, request):
         query_lat = float(request.lat) if request.lat else 0
         query_lon = float(request.lon) if request.lon else 0
         query_radius = float(request.radius_km * 1000.0) if request.radius_km else 50000.0 #default radius of 50km
+
         if (query_lat==0 or query_lon==0):
             # TODO: show all questions for Toronto
             query_string = "timestamp > 2013-3-13"
         else:
             query_string = "distance(location, geopoint(%f, %f)) <= %f" % (query_lat, query_lon, query_radius)
+
+        # build the index if not already done
+        if search.get_indexes().__len__() == 0:
+            rebuild_question_search_index()
+
         index = search.Index(name=ALL_QUESTIONS_INDEX)
         results = index.search(query_string)
         questions = [models.QuestionModel.get_by_id(long(r.doc_id)) for r in results]
@@ -151,7 +179,7 @@ class SkooziQnAApi(remote.Service):
         # TODO: need to figure out how to handle cases where Google Account is not present
         user = users.User(request.email)
 
-        question_key = ndb.Key(urlsafe = request.question_urlsafe)
+        question_key = ndb.Key(urlsafe=request.question_urlsafe)
         answer = models.AnswerModel(
             added_by = user,
             content = request.content,
@@ -162,7 +190,7 @@ class SkooziQnAApi(remote.Service):
         )
         answer_key = answer.put()
 
-        response = models.PostResponse(post_key = answer_key.urlsafe())
+        response = models.PostResponse(post_key=answer_key.urlsafe())
         return response
 
     Q_ID_RESOURCE = endpoints.ResourceContainer(
@@ -170,7 +198,7 @@ class SkooziQnAApi(remote.Service):
         id=messages.StringField(1))
 
     @endpoints.method(Q_ID_RESOURCE, models.AnswerMessageCollection,
-                    path='answers_for_question', http_method='GET',name='question.listAnswers')
+                    path='answers_for_question', http_method='GET', name='question.listAnswers')
     def question_answers_list(self, request):
         # question_key = ndb.Key(urlsafe = 'ag5kZXZ-c2tvb3ppLTk1OXIaCxINUXVlc3Rpb25Nb2RlbBiAgICAgOidCgw')
         question_key = ndb.Key(urlsafe = request.id)
@@ -188,7 +216,7 @@ class SkooziQnAApi(remote.Service):
                 locationLon = answer.location.lon
             )
             a_list.append(answer_message)
-        return_list = models.AnswerMessageCollection(answers = a_list)
+        return_list = models.AnswerMessageCollection(answers=a_list)
         return return_list
 
 application = endpoints.api_server([SkooziQnAApi])
