@@ -21,6 +21,7 @@ from google.appengine.api import users, search
 
 # https://apis-explorer.appspot.com/apis-explorer/?base=http%3A%2F%2Flocalhost%3A8282%2F_ah%2Fapi#p/skooziqna/v0.1/
 package = 'Skoozi'
+TAG = 'main.py'
 RAISE_UNAUTHORIZED = False
 ALL_QUESTIONS_INDEX = 'all_questions'
 
@@ -49,12 +50,12 @@ def add_question_to_search_index(question_key):
     # Index the document.
     try:
         index.put(document)
-        logging.info("def: {} added search document for Question key {}".format(add_question_to_search_index.__name__, question_key))
+        logging.info("{}: added search document for Question key {}".format(TAG, question_key))
     except search.PutError, e:
         result = e.results[0]
         if result.code == search.OperationResult.TRANSIENT_ERROR:
             # possibly retry indexing result.object_id
-            logging.error("def: {} error while adding to search index, with result code {}".format(add_question_to_search_index.__name__, result.code))
+            logging.error("{}: error while adding to search index, with result code {}".format(TAG, result.code))
     except search.Error, e:
         # log the failure
         logging.exception(e)
@@ -69,6 +70,20 @@ def rebuild_question_search_index():
     questions = models.QuestionModel.query()
     [add_question_to_search_index(q) for q in questions]
 
+# TODO: this functionality shoudl be resitricted to admin user(s) using oauth
+def reset_question_search_index():
+    """Delete all the docs in the given index."""
+    doc_index = search.Index(name=ALL_QUESTIONS_INDEX)
+
+    # looping because get_range by default returns up to 100 documents at a time
+    while True:
+        # Get a list of documents populating only the doc_id field and extract the ids.
+        document_ids = [document.doc_id
+                        for document in doc_index.get_range(ids_only=True)]
+        if not document_ids:
+            break
+        # Delete the documents for the given ids from the Index.
+        doc_index.delete(document_ids)
 
 @endpoints.api(name='skooziqna', version='v0.1')
 class SkooziQnAApi(remote.Service):
@@ -109,15 +124,15 @@ class SkooziQnAApi(remote.Service):
         user = users.User(request.email)
 
         question = models.QuestionModel(
-            added_by = user,
-            content = request.content,
+            added_by=user,
+            content=request.content,
             # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
-            timestamp = datetime.fromtimestamp(request.timestamp_unix),
-            location = ndb.GeoPt(request.locationLat, request.locationLon)
+            timestamp=datetime.fromtimestamp(request.timestamp_unix),
+            location=ndb.GeoPt(request.locationLat, request.locationLon)
         )
         question_key = question.put()
         add_question_to_search_index(question_key)
-        response = models.PostResponse(post_key = question_key.urlsafe())
+        response = models.PostResponse(post_key=question_key.urlsafe())
         # return STORED_GREETINGS.items[2]
         return response
 
@@ -145,25 +160,34 @@ class SkooziQnAApi(remote.Service):
         if search.get_indexes().__len__() == 0:
             rebuild_question_search_index()
 
+        search_questions = []
         index = search.Index(name=ALL_QUESTIONS_INDEX)
-        results = index.search(query_string)
-        questions = [models.QuestionModel.get_by_id(long(r.doc_id)) for r in results]
-        q_list = []
-        for question in questions:
+        search_results = index.search(query_string)
+        for search_item in search_results:
+            retrieved_question = models.QuestionModel.get_by_id(long(search_item.doc_id))
+            if retrieved_question is None:
+                logging.info("{} index has extra documents".format(ALL_QUESTIONS_INDEX))
+                logging.debug("Following search document was not found in Question model")
+                logging.debug(retrieved_question)
+                # TODO: very aggressive strategy - need to find better way of pruning - maybe async task queue
+                reset_question_search_index()
+            else:
+                search_questions.append(retrieved_question)
+        # questions = [models.QuestionModel.get_by_id(long(r.doc_id)) for r in results]
+
+        returned_questions = []
+        for question in search_questions:
             question_message = models.QuestionMessage(
-                id_urlsafe = question.key.urlsafe(),
-                email = question.added_by.email(),
-                content = question.content,
-                timestamp_unix = int(time.mktime(question.timestamp.timetuple())),
-                locationLat = question.location.lat,
-                locationLon = question.location.lon
+                id_urlsafe=question.key.urlsafe(),
+                email=question.added_by.email(),
+                content=question.content,
+                timestamp_unix=int(time.mktime(question.timestamp.timetuple())),
+                locationLat=question.location.lat,
+                locationLon=question.location.lon
             )
-            q_list.append(question_message)
-        return_list = models.QuestionMessageCollection(questions = q_list)
+            returned_questions.append(question_message)
+        return_list = models.QuestionMessageCollection(questions=returned_questions)
         return return_list
-        # for index in search.get_indexes(fetch_schema=True):
-        #     print("index %s", index.name)
-        #     print("schema: %s", index.schema)
 
     @endpoints.method(models.AnswerMessage, models.PostResponse,
                     path='answer/insert', http_method='POST', name='answer.insert')
