@@ -8,7 +8,7 @@ For example the *say_hello* handler, handling the URL route '/hello/<username>',
   must be passed *username* as the argument.
 
 """
-from google.appengine.api import users
+from google.appengine.api import users, oauth
 from google.appengine.ext import ndb
 from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime.apiproxy_errors import CapabilityDisabledError
@@ -26,6 +26,9 @@ from forms import QuestionForm, AnswerForm, QuestionSearchForm, ProspectiveUserF
 
 from google.appengine.api import search, prospective_search
 from google.appengine.api import channel
+
+# from google.appengine.ext import endpoints
+# from protorpc import messages, remote
 
 # For background jobs
 from google.appengine.ext import deferred
@@ -427,7 +430,8 @@ def rebuild_question_search_index():
 
 def authenticate():
     """Force the user to authenticate, if not already done."""
-    user = users.get_current_user()
+    # user = users.get_current_user()
+    user = oauth.get_current_user()
     if user:
         login_url = users.create_login_url(url_for('home'))
         logout_url = users.create_logout_url(login_url)

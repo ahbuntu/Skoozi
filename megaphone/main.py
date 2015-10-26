@@ -16,15 +16,20 @@ from protorpc import messages
 from protorpc import message_types
 from protorpc import remote
 
-from google.appengine.ext import ndb, db
-from google.appengine.api import users, search
+from google.appengine.ext import ndb
+from google.appengine.api import users, search, oauth
 
 # https://apis-explorer.appspot.com/apis-explorer/?base=http%3A%2F%2Flocalhost%3A8282%2F_ah%2Fapi#p/skooziqna/v0.1/
 package = 'Skoozi'
 TAG = 'main.py'
 RAISE_UNAUTHORIZED = False
 ALL_QUESTIONS_INDEX = 'all_questions'
+USER_INFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'
 
+WEB_CLIENT_ID = '26298710398-8jbuih8cj38ihi87bsloqkvur2mfut11.apps.googleusercontent.com'
+ANDROID_CLIENT_ID = '26298710398-7s5ldlh5s8p0e4njp6hq6i94n8h70tri.apps.googleusercontent.com'
+IOS_CLIENT_ID = 'fixme_when_ios_built'
+ANDROID_AUDIENCE = WEB_CLIENT_ID
 
 STORED_GREETINGS = models.GreetingCollection(items=[
     models.Greeting(message='hello world!'),
@@ -33,7 +38,34 @@ STORED_GREETINGS = models.GreetingCollection(items=[
 ])
 
 
-def add_question_to_search_index(question_key):
+def add_question_to_search_index(question):
+    """Build a custom search index for geo-based searched."""
+    index = search.Index(name=ALL_QUESTIONS_INDEX)
+    document = search.Document(
+        doc_id=unicode(question.key.id()),  # builds relationship between Question model and Question search document
+        fields=[
+            # search.HtmlField(name='comment', value='this is <em>marked up</em> text'),
+            # search.NumberField(name='number_of_visits', value=7),
+            # search.TextField(name='customer', value='Joe Jackson'), # might be needed in the future to enable question title searching
+            search.DateField(name='timestamp', value=question.timestamp),  #watch out - no time information in search index
+            search.GeoField(name='location', value=search.GeoPoint(question.location.lat, question.location.lon))
+            ])
+
+    # Index the document.
+    try:
+        index.put(document)
+        logging.info("{}: added search document for Question key {}".format(TAG, question.key))
+    except search.PutError, e:
+        result = e.results[0]
+        if result.code == search.OperationResult.TRANSIENT_ERROR:
+            # possibly retry indexing result.object_id
+            logging.error("{}: error while adding to search index, with result code {}".format(TAG, result.code))
+    except search.Error, e:
+        # log the failure
+        logging.exception(e)
+
+
+def add_question_to_search_index_by_key(question_key):
     """Build a custom search index for geo-based searched."""
     index = search.Index(name=ALL_QUESTIONS_INDEX)
     question = question_key.get()
@@ -43,7 +75,7 @@ def add_question_to_search_index(question_key):
             # search.HtmlField(name='comment', value='this is <em>marked up</em> text'),
             # search.NumberField(name='number_of_visits', value=7),
             # search.TextField(name='customer', value='Joe Jackson'), # might be needed in the future to enable question title searching
-            search.DateField(name='timestamp', value=question.timestamp), # watch out - no time information in search index
+            search.DateField(name='timestamp', value=question.timestamp),  #watch out - no time information in search index
             search.GeoField(name='location', value=search.GeoPoint(question.location.lat, question.location.lon))
             ])
 
@@ -65,34 +97,77 @@ def add_question_to_search_index(question_key):
 # FIXME: normal users shouldn't be able to execute this
 def rebuild_question_search_index():
     """Used to generate/build the geo-search index."""
-
     logging.info("Rebuilding question search index")
     questions = models.QuestionModel.query()
     [add_question_to_search_index(q) for q in questions]
 
+
 # TODO: this functionality shoudl be resitricted to admin user(s) using oauth
-def reset_question_search_index():
+def prune_question_search_index():
     """Delete all the docs in the given index."""
     doc_index = search.Index(name=ALL_QUESTIONS_INDEX)
-
     # looping because get_range by default returns up to 100 documents at a time
     while True:
         # Get a list of documents populating only the doc_id field and extract the ids.
-        document_ids = [document.doc_id
-                        for document in doc_index.get_range(ids_only=True)]
+        document_ids = [document.doc_id for document in doc_index.get_range(ids_only=True)]
         if not document_ids:
             break
         # Delete the documents for the given ids from the Index.
         doc_index.delete(document_ids)
 
-@endpoints.api(name='skooziqna', version='v0.1')
+
+def authenticate_user():
+    scope = 'https://www.googleapis.com/auth/userinfo.email'
+    logging.info('\noauth.get_current_user(%s)' % repr(scope))
+    try:
+        user = oauth.get_current_user(scope)
+        allowed_clients = ['407408718192.apps.googleusercontent.com'] # list your client ids here
+        token_audience = oauth.get_client_id(scope)
+        if token_audience not in allowed_clients:
+            raise oauth.OAuthRequestError('audience of token \'%s\' is not in allowed list (%s)'
+                                      % (token_audience, allowed_clients))
+
+        logging.info(' = %s\n' % user)
+        logging.info('- auth_domain = %s\n' % user.auth_domain())
+        logging.info('- email       = %s\n' % user.email())
+        logging.info('- nickname    = %s\n' % user.nickname())
+        logging.info('- user_id     = %s\n' % user.user_id())
+    except oauth.OAuthRequestError, e:
+        # # self.response.set_status(401)
+        # # self.response.write(' -> %s %s\n' % (e.__class__.__name__, e.message))
+        # logging.warn(traceback.format_exc())
+        logging.error(e.message)
+
+
+def authenticate_admin_user():
+    """returns true if admin. does not verify allowed clients membership"""
+    if oauth.is_current_user_admin(endpoints.EMAIL_SCOPE):
+        return True
+    return False
+
+
+@endpoints.api(name='skooziqna', version='v0.1',
+               allowed_client_ids=[WEB_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID, endpoints.API_EXPLORER_CLIENT_ID],  # endpoints.API_EXPLORER_CLIENT_ID needed for testing against API Explorer in production.
+               audiences=[ANDROID_AUDIENCE], scopes=[endpoints.EMAIL_SCOPE])
 class SkooziQnAApi(remote.Service):
     """SkooziQnAAPI v0.1"""
 
+    @endpoints.method(message_types.VoidMessage, models.ResetResponse,
+                      path='resetindex', http_method='GET', name='admin.resetindex')
+    def reset_search_index(self, unused_request):
+        if authenticate_admin_user():
+            prune_question_search_index()
+        else:
+            message = 'User "%s" does not have admin rights.' % oauth.get_current_user(USER_INFO_SCOPE).nickname()
+            raise endpoints.UnauthorizedException(message)
+        return models.ResetResponse(reset_status='SUCCESS')
+
+
     @endpoints.method(message_types.VoidMessage, models.GreetingCollection,
-                    path='hellogreeting', http_method='GET', name='greetings.listGreeting')
+                      path='hellogreeting', http_method='GET', name='greetings.listGreeting')
     def greetings_list(self, unused_request):
         return STORED_GREETINGS
+
 
     ID_RESOURCE = endpoints.ResourceContainer(
         message_types.VoidMessage,
@@ -131,7 +206,7 @@ class SkooziQnAApi(remote.Service):
             location=ndb.GeoPt(request.locationLat, request.locationLon)
         )
         question_key = question.put()
-        add_question_to_search_index(question_key)
+        add_question_to_search_index_by_key(question_key)
         response = models.PostResponse(post_key=question_key.urlsafe())
         # return STORED_GREETINGS.items[2]
         return response
@@ -170,7 +245,7 @@ class SkooziQnAApi(remote.Service):
                 logging.debug("Following search document was not found in Question model")
                 logging.debug(retrieved_question)
                 # TODO: very aggressive strategy - need to find better way of pruning - maybe async task queue
-                reset_question_search_index()
+                prune_question_search_index()
             else:
                 search_questions.append(retrieved_question)
         # questions = [models.QuestionModel.get_by_id(long(r.doc_id)) for r in results]

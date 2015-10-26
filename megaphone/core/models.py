@@ -50,6 +50,9 @@ class AnswerMessage(messages.Message):
     locationLat = messages.FloatField(6, required=True)
     locationLon = messages.FloatField(7, required=True)
 
+class ResetResponse(messages.Message):
+    reset_status = messages.StringField(1)
+
 class PostResponse(messages.Message):
     post_key = messages.StringField(1)
 
