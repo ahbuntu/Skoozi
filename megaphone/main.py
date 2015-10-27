@@ -190,16 +190,18 @@ class SkooziQnAApi(remote.Service):
         # TODO: move this to a decorator maybe?
         # https://cloud.google.com/appengine/docs/python/endpoints/auth
         # ref section "Adding a user check to methods"
-        # https://cloud.google.com/appengine/docs/python/users/userobjects
-        # ASSUMPTION: only Google Accounts used for authenticaion
         current_user = endpoints.get_current_user()
         if RAISE_UNAUTHORIZED and current_user is None:
             raise endpoints.UnauthorizedException('Invalid token.')
-        # TODO: need to figure out how to handle cases where Google Account is not present
-        user = users.User(request.email)
+
+        # need to use oauth.get_current_user since endpoints.get_current_user doesn't return user_id
+        app_user = models.AppUserModel(
+            user_id=oauth.get_current_user(USER_INFO_SCOPE).user_id()
+        )
+        app_user.put_async()
 
         question = models.QuestionModel(
-            added_by=user,
+            added_by=app_user,
             content=request.content,
             # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
             timestamp=datetime.fromtimestamp(request.timestamp_unix),
