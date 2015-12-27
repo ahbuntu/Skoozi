@@ -162,19 +162,17 @@ class SkooziQnAApi(remote.Service):
             raise endpoints.UnauthorizedException(message)
         return models.ResetResponse(reset_status='SUCCESS')
 
-
     @endpoints.method(message_types.VoidMessage, models.GreetingCollection,
                       path='hellogreeting', http_method='GET', name='greetings.listGreeting')
     def greetings_list(self, unused_request):
         return STORED_GREETINGS
-
 
     ID_RESOURCE = endpoints.ResourceContainer(
         message_types.VoidMessage,
         id=messages.IntegerField(1, variant=messages.Variant.INT32))
 
     @endpoints.method(ID_RESOURCE, models.Greeting,
-                    path='hellogreeting/{id}', http_method='GET', name='greetings.getGreeting')
+                      path='hellogreeting/{id}', http_method='GET', name='greetings.getGreeting')
     def greeting_get(self, request):
         try:
             # test = helpers.api_get_questions()
@@ -183,9 +181,8 @@ class SkooziQnAApi(remote.Service):
             raise endpoints.NotFoundException('Greeting %s not found.' %
                                         (request.id,))
 
-
     @endpoints.method(models.QuestionMessage, models.PostResponse,
-                    path='question/insert', http_method='POST', name='question.insert')
+                      path='question/insert', http_method='POST', name='question.insert')
     def question_insert(self, request):
         # TODO: move this to a decorator maybe?
         # https://cloud.google.com/appengine/docs/python/endpoints/auth
@@ -219,15 +216,14 @@ class SkooziQnAApi(remote.Service):
         lon=messages.FloatField(2),
         radius_km=messages.FloatField(3))
 
-
     @endpoints.method(NEARBY_ID_RESOURCE, models.QuestionMessageCollection,
-                    path='questions/list', http_method='GET', name='questions.list')
+                      path='questions/list', http_method='GET', name='questions.list')
     def questions_list(self, request):
         query_lat = float(request.lat) if request.lat else 0
         query_lon = float(request.lon) if request.lon else 0
         query_radius = float(request.radius_km * 1000.0) if request.radius_km else 50000.0 #default radius of 50km
 
-        if (query_lat==0 or query_lon==0):
+        if query_lat == 0 or query_lon == 0:
             # TODO: show all questions for Toronto
             query_string = "timestamp > 2013-3-13"
         else:
@@ -267,7 +263,7 @@ class SkooziQnAApi(remote.Service):
         return return_list
 
     @endpoints.method(models.AnswerMessage, models.PostResponse,
-                    path='answer/insert', http_method='POST', name='answer.insert')
+                      path='answer/insert', http_method='POST', name='answer.insert')
     def answer_insert(self, request):
         # TODO: move this to a decorator maybe?
         # https://cloud.google.com/appengine/docs/python/endpoints/auth
@@ -299,7 +295,7 @@ class SkooziQnAApi(remote.Service):
         id=messages.StringField(1))
 
     @endpoints.method(Q_ID_RESOURCE, models.AnswerMessageCollection,
-                    path='answers_for_question', http_method='GET', name='question.listAnswers')
+                      path='answers_for_question', http_method='GET', name='question.listAnswers')
     def question_answers_list(self, request):
         # question_key = ndb.Key(urlsafe = 'ag5kZXZ-c2tvb3ppLTk1OXIaCxINUXVlc3Rpb25Nb2RlbBiAgICAgOidCgw')
         question_key = ndb.Key(urlsafe = request.id)
