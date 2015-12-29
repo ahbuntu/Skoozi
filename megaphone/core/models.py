@@ -47,7 +47,7 @@ class AnswerMessage(messages.Message):
     id_urlsafe = messages.StringField(1, required=False)
     question_urlsafe = messages.StringField(2, required=True)
     # TODO: figure out if the email is really required
-    app_user_id = messages.StringField(3, required=True)
+    # app_user_id = messages.StringField(3, required=True)
     content = messages.StringField(4, required=True)
     timestamp_unix = messages.IntegerField(5, required=True)
     locationLat = messages.FloatField(6, required=True)

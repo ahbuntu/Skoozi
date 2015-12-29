@@ -24,7 +24,6 @@ TAG = 'main.py'
 ALL_QUESTIONS_INDEX = 'all_questions'
 
 DEBUG = True # fixme: should figure this out from environment variables
-RAISE_UNAUTHORIZED = True
 USER_INFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'
 WEB_CLIENT_ID = '26298710398-8jbuih8cj38ihi87bsloqkvur2mfut11.apps.googleusercontent.com'
 ANDROID_CLIENT_ID = '26298710398-7s5ldlh5s8p0e4njp6hq6i94n8h70tri.apps.googleusercontent.com'
@@ -86,6 +85,9 @@ def prune_question_search_index():
 
 def is_user_authenticated():
     # https://cloud.google.com/appengine/docs/python/endpoints/auth
+    # https://cloud.google.com/appengine/docs/python/users/userobjects
+    # ASSUMPTION: only Google Accounts used for authentication
+    # TODO: need to figure out how to handle cases where Google Account is not present
     current_user = endpoints.get_current_user()
     if current_user is None:
         return False
@@ -133,20 +135,20 @@ class SkooziQnAApi(remote.Service):
     def question_insert(self, request):
         """Inserts the question to the datastore and makes it available for searching. Will also create user account
         if it doesn't exist"""
-        current_user = endpoints.get_current_user()  # returns oauth authenticated user
-        if current_user is not None:
-            app_user = self.get_app_user()
-            question = QuestionModel(
-                added_by=app_user,
-                content=request.content,
-                # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
-                timestamp=datetime.fromtimestamp(request.timestamp_unix),
-                location=ndb.GeoPt(request.locationLat, request.locationLon))
-            question_key = question.put()
-            add_question_to_search_index(question)
-            return  PostResponse(post_key=question_key.urlsafe())
-        else:
+        if not is_user_authenticated():
             raise endpoints.UnauthorizedException('Invalid token.')
+
+        app_user = self.get_app_user()
+        question = QuestionModel(
+            added_by=app_user,
+            content=request.content,
+            # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
+            timestamp=datetime.fromtimestamp(request.timestamp_unix),
+            location=ndb.GeoPt(request.locationLat, request.locationLon))
+        question_key = question.put()
+        add_question_to_search_index(question)
+        return PostResponse(post_key=question_key.urlsafe())
+
 
     @staticmethod
     def get_app_user():
@@ -164,11 +166,9 @@ class SkooziQnAApi(remote.Service):
             logging.debug("{}: oauth_user_id: {} is repeated in app user model".format(TAG, oauth_user_id))
             raise endpoints.InternalServerErrorException
 
-    NEARBY_ID_RESOURCE = endpoints.ResourceContainer(
-        message_types.VoidMessage,
-        lat=messages.FloatField(1),
-        lon=messages.FloatField(2),
-        radius_km=messages.FloatField(3))
+    NEARBY_ID_RESOURCE = endpoints.ResourceContainer(message_types.VoidMessage,
+                                                     lat=messages.FloatField(1), lon=messages.FloatField(2),
+                                                     radius_km=messages.FloatField(3))
 
     @endpoints.method(NEARBY_ID_RESOURCE, QuestionMessageCollection, path='questions/list', http_method='GET',
                       name='questions.list')
@@ -217,59 +217,56 @@ class SkooziQnAApi(remote.Service):
                 locationLon=question.location.lon
         )
 
-    @endpoints.method(AnswerMessage, PostResponse, path='answer/insert', http_method='POST',
-                      name='answer.insert')
-    def answer_insert(self, request):
-        # TODO: move this to a decorator maybe?
-        # https://cloud.google.com/appengine/docs/python/endpoints/auth
-        # ref section "Adding a user check to methods"
-        # https://cloud.google.com/appengine/docs/python/users/userobjects
-        # ASSUMPTION: only Google Accounts used for authenticaion
-        current_user = endpoints.get_current_user()
-        if RAISE_UNAUTHORIZED and current_user is None:
-            raise endpoints.UnauthorizedException('Invalid token.')
-        # TODO: need to figure out how to handle cases where Google Account is not present
-        user = users.User(request.email)
+    Q_ID_RESOURCE = endpoints.ResourceContainer(message_types.VoidMessage, id=messages.StringField(1))
 
-        question_key = ndb.Key(urlsafe=request.question_urlsafe)
-        answer = AnswerModel(
-            added_by = user,
-            content = request.content,
-            # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
-            timestamp = datetime.fromtimestamp(request.timestamp_unix),
-            location = ndb.GeoPt(request.locationLat, request.locationLon),
-            parent = question_key
-        )
-        answer_key = answer.put()
-
-        response = PostResponse(post_key=answer_key.urlsafe())
-        return response
-
-    Q_ID_RESOURCE = endpoints.ResourceContainer(
-        message_types.VoidMessage,
-        id=messages.StringField(1))
-
-    @endpoints.method(Q_ID_RESOURCE, AnswerMessageCollection, path='answers_for_question', http_method='GET',
+    @endpoints.method(Q_ID_RESOURCE, AnswerMessageCollection, path='question/answers', http_method='GET',
                       name='question.listAnswers')
     def question_answers_list(self, request):
-        # question_key = ndb.Key(urlsafe = 'ag5kZXZ-c2tvb3ppLTk1OXIaCxINUXVlc3Rpb25Nb2RlbBiAgICAgOidCgw')
-        question_key = ndb.Key(urlsafe = request.id)
-        q_answers = AnswerModel.query(ancestor=question_key).fetch()
-        a_list = []
-        for answer in q_answers:
-            answer_message = AnswerMessage(
-                id_urlsafe = answer.key.urlsafe(),
-                question_urlsafe = question_key.urlsafe(),
-                email = answer.added_by.email(),
-                content = answer.content,
-                # date_time_milis = time.mktime(datetimeobj.timetuple()) * 1000 + datetimeobj.microsecond / 1000
-                timestamp_unix = int(time.mktime(answer.timestamp.timetuple())),
-                locationLat = answer.location.lat,
-                locationLon = answer.location.lon
+        """Get all answers related to the specified question."""
+        if not is_user_authenticated():
+            raise endpoints.UnauthorizedException('Invalid token')
+
+        try:
+            question_key = ndb.Key(urlsafe=request.id)
+            q_answers = AnswerModel.query(ancestor=question_key).fetch()
+            a_list = []
+            for answer in q_answers:
+                answer_message = AnswerMessage(
+                    id_urlsafe=answer.key.urlsafe(),
+                    question_urlsafe=question_key.urlsafe(),
+                    content=answer.content,
+                    # date_time_milis=time.mktime(datetimeobj.timetuple()) * 1000 + datetimeobj.microsecond / 1000
+                    timestamp_unix=int(time.mktime(answer.timestamp.timetuple())),
+                    locationLat=answer.location.lat,
+                    locationLon=answer.location.lon
+                )
+                a_list.append(answer_message)
+            return AnswerMessageCollection(answers=a_list)
+        except:
+            raise endpoints.BadRequestException("One or more parameters not properly specified")
+
+    @endpoints.method(AnswerMessage, PostResponse, path='answer/insert', http_method='POST', name='answer.insert')
+    def answer_insert(self, request):
+        """Insert an answer provided by a user for a specific question. User will be created if required"""
+        if not is_user_authenticated():
+            raise endpoints.UnauthorizedException('Invalid token')
+
+        app_user = self.get_app_user()
+        try:
+            question_key = ndb.Key(urlsafe=request.question_urlsafe)
+            answer = AnswerModel(
+                added_by=app_user,
+                content=request.content,
+                # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
+                timestamp=datetime.fromtimestamp(request.timestamp_unix),
+                location=ndb.GeoPt(request.locationLat, request.locationLon),
+                parent=question_key
             )
-            a_list.append(answer_message)
-        return_list = AnswerMessageCollection(answers=a_list)
-        return return_list
+            answer_key = answer.put()
+            return PostResponse(post_key=answer_key.urlsafe())
+        except TypeError:
+            raise endpoints.BadRequestException("One or more parameters not properly specified")
+
 
 application = endpoints.api_server([SkooziQnAApi])
 # Generate Android client library
