@@ -1,17 +1,14 @@
-"""Hello World API implemented using Google Cloud Endpoints.
+"""SkoozieQnA API implemented using Google Cloud Endpoints.
 
-Defined here are the ProtoRPC messages needed to define Schemas for methods
-as well as those methods defined in an API.
+Defined here are the methods defined in the API.
 """
 
 import endpoints
 import logging
-import calendar, time
-# from application import helpers
-# from application import models
-from core.models import Greeting, GreetingCollection
+import time
+
 from core.models import AppUserModel, QuestionModel, QuestionMessage, QuestionMessageCollection
-from core.models import AnswerModel, AnswerMessage, AnswerMessageCollection, PostResponse, ResetResponse
+from core.models import AnswerModel, AnswerMessage, AnswerMessageCollection, PostResponse, StatusResponse
 from datetime import datetime
 
 from protorpc import messages
@@ -26,18 +23,13 @@ package = 'Skoozi'
 TAG = 'main.py'
 ALL_QUESTIONS_INDEX = 'all_questions'
 
+DEBUG = True # fixme: should figure this out from environment variables
 RAISE_UNAUTHORIZED = True
 USER_INFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'
 WEB_CLIENT_ID = '26298710398-8jbuih8cj38ihi87bsloqkvur2mfut11.apps.googleusercontent.com'
 ANDROID_CLIENT_ID = '26298710398-7s5ldlh5s8p0e4njp6hq6i94n8h70tri.apps.googleusercontent.com'
 IOS_CLIENT_ID = 'fixme_when_ios_built'
 ANDROID_AUDIENCE = WEB_CLIENT_ID
-
-STORED_GREETINGS = GreetingCollection(items=[
-    Greeting(message='hello world!'),
-    Greeting(message='goodbye world!'),
-    Greeting(message='good job')
-])
 
 
 def add_question_to_search_index(question):
@@ -48,8 +40,8 @@ def add_question_to_search_index(question):
         fields=[
             # search.HtmlField(name='comment', value='this is <em>marked up</em> text'),
             # search.NumberField(name='number_of_visits', value=7),
-            # search.TextField(name='customer', value='Joe Jackson'), # might be needed in the future to enable question title searching
-            search.DateField(name='timestamp', value=question.timestamp),  #watch out - no time information in search index
+            # search.TextField(name='customer', value='Joe Jackson'), # in future to enable question content searching
+            search.DateField(name='timestamp', value=question.timestamp),
             search.GeoField(name='location', value=search.GeoPoint(question.location.lat, question.location.lon))
             ])
 
@@ -67,42 +59,18 @@ def add_question_to_search_index(question):
         logging.exception(e)
 
 
-def add_question_to_search_index_by_key(question_key):
-    """Build a custom search index for geo-based searched."""
-    index = search.Index(name=ALL_QUESTIONS_INDEX)
-    question = question_key.get()
-    document = search.Document(
-        doc_id=unicode(question_key.id()),  # builds relationship between Question model and Question search document
-        fields=[
-            # search.HtmlField(name='comment', value='this is <em>marked up</em> text'),
-            # search.NumberField(name='number_of_visits', value=7),
-            # search.TextField(name='content', value=question.content), # in future to enable question content searching
-            search.DateField(name='timestamp', value=question.timestamp),
-            search.GeoField(name='location', value=search.GeoPoint(question.location.lat, question.location.lon))
-            ])
-    try:
-        index.put_async(document)
-        logging.info("{}: added search document for Question key {}".format(TAG, question_key))
-    except search.PutError, e:
-        result = e.results[0]
-        if result.code == search.OperationResult.TRANSIENT_ERROR:
-            # possibly retry indexing result.object_id
-            logging.error("{}: error while adding to search index, with result code {}".format(TAG, result.code))
-    except search.Error, e:
-        # log the failure
-        logging.exception(e)
-
-
 # @admin_required
 # FIXME: normal users shouldn't be able to execute this
+# TODO: this should be done somewhere through the task queue
 def rebuild_question_search_index():
     """Used to generate/build the geo-search index."""
-    logging.info("Rebuilding question search index")
+    logging.info("{}: Rebuilding question search index".format(TAG))
     questions = QuestionModel.query()
     [add_question_to_search_index(q) for q in questions]
 
 
-# TODO: this functionality shoudl be resitricted to admin user(s) using oauth
+# FIXME: this functionality should be restricted to admin user(s) using oauth
+# TODO: very aggressive strategy - need to find better way of pruning - maybe async task queue
 def prune_question_search_index():
     """Delete all the docs in the given index."""
     doc_index = search.Index(name=ALL_QUESTIONS_INDEX)
@@ -116,7 +84,7 @@ def prune_question_search_index():
         doc_index.delete(document_ids)
 
 
-def is_user_authorized():
+def is_user_authenticated():
     # https://cloud.google.com/appengine/docs/python/endpoints/auth
     current_user = endpoints.get_current_user()
     if current_user is None:
@@ -124,37 +92,12 @@ def is_user_authorized():
     return True
 
 
-def authenticate_user():
-    """Quite possible that endpoints.get_current_user() may perform the authentication being performed here
-    Ref: https://cloud.google.com/appengine/docs/python/endpoints/auth -Adding a user check to methods- """
-
-    scope = 'https://www.googleapis.com/auth/userinfo.email'
-    logging.info('\noauth.get_current_user(%s)' % repr(scope))
-    try:
-        user = oauth.get_current_user(scope)
-        allowed_clients = ['407408718192.apps.googleusercontent.com'] # list your client ids here
-        token_audience = oauth.get_client_id(scope)
-        if token_audience not in allowed_clients:
-            raise oauth.OAuthRequestError('audience of token \'%s\' is not in allowed list (%s)'
-                                          % (token_audience, allowed_clients))
-
-        logging.info(' = %s\n' % user)
-        logging.info('- auth_domain = %s\n' % user.auth_domain())
-        logging.info('- email       = %s\n' % user.email())
-        logging.info('- nickname    = %s\n' % user.nickname())
-        logging.info('- user_id     = %s\n' % user.user_id())
-    except oauth.OAuthRequestError, e:
-        # # self.response.set_status(401)
-        # # self.response.write(' -> %s %s\n' % (e.__class__.__name__, e.message))
-        # logging.warn(traceback.format_exc())
-        logging.error(e.message)
-
-
-def authenticate_admin_user():
+def is_user_admin():
     """returns true if admin. does not verify allowed clients membership"""
+    # http://stackoverflow.com/questions/16752998/is-there-a-way-to-check-if-the-user-is-an-admin-in-appengine-cloud-endpoints
     if oauth.is_current_user_admin(endpoints.EMAIL_SCOPE):
         return True
-    return False
+    return False or DEBUG
 
 
 @endpoints.api(name='skooziqna', version='v0.1',
@@ -164,41 +107,32 @@ def authenticate_admin_user():
 class SkooziQnAApi(remote.Service):
     """SkooziQnAAPI v0.1"""
 
-    @endpoints.method(message_types.VoidMessage, ResetResponse, path='resetindex', http_method='GET',
+    @endpoints.method(message_types.VoidMessage, StatusResponse, path='resetindex', http_method='GET',
                       name='admin.resetindex')
     def reset_search_index(self, unused_request):
-        if authenticate_admin_user():
+        """Reset the search index"""
+        if is_user_admin():
             prune_question_search_index()
         else:
             message = 'User "%s" does not have admin rights.' % oauth.get_current_user(USER_INFO_SCOPE).nickname()
             raise endpoints.UnauthorizedException(message)
-        return ResetResponse(reset_status='SUCCESS')
+        return StatusResponse(status='SUCCESS')
 
-    @endpoints.method(message_types.VoidMessage, GreetingCollection, path='hellogreeting', http_method='GET',
-                      name='greetings.listGreeting')
-    def greetings_list(self, unused_request):
-        return STORED_GREETINGS
+    @endpoints.method(message_types.VoidMessage, StatusResponse, path='rebuildindex', http_method='GET',
+                      name='admin.rebuildindex')
+    def rebuild_search_index(self, unused_request):
+        """Rebuild the search index"""
+        if is_user_admin():
+            rebuild_question_search_index()
+        else:
+            message = 'User "%s" does not have admin rights.' % oauth.get_current_user(USER_INFO_SCOPE).nickname()
+            raise endpoints.UnauthorizedException(message)
+        return StatusResponse(status='SUCCESS')
 
-    ID_RESOURCE = endpoints.ResourceContainer(
-        message_types.VoidMessage,
-        id=messages.IntegerField(1, variant=messages.Variant.INT32))
-
-    @endpoints.method(ID_RESOURCE, Greeting, path='hellogreeting/{id}', http_method='GET',
-                      name='greetings.getGreeting')
-    def greeting_get(self, request):
-        try:
-            # test = helpers.api_get_questions()
-            return STORED_GREETINGS.items[request.id]
-        except (IndexError, TypeError):
-            raise endpoints.NotFoundException('Greeting %s not found.' %
-                                        (request.id,))
-
-    @endpoints.method(QuestionMessage, PostResponse, path='question/insert', http_method='POST',
-                      name='question.insert')
+    @endpoints.method(QuestionMessage, PostResponse, path='question/insert', http_method='POST', name='question.insert')
     def question_insert(self, request):
         """Inserts the question to the datastore and makes it available for searching. Will also create user account
         if it doesn't exist"""
-
         current_user = endpoints.get_current_user()  # returns oauth authenticated user
         if current_user is not None:
             app_user = self.get_app_user()
@@ -209,9 +143,8 @@ class SkooziQnAApi(remote.Service):
                 timestamp=datetime.fromtimestamp(request.timestamp_unix),
                 location=ndb.GeoPt(request.locationLat, request.locationLon))
             question_key = question.put()
-            add_question_to_search_index_by_key(question_key)
-            response = PostResponse(post_key=question_key.urlsafe())
-            return response
+            add_question_to_search_index(question)
+            return  PostResponse(post_key=question_key.urlsafe())
         else:
             raise endpoints.UnauthorizedException('Invalid token.')
 
@@ -227,8 +160,8 @@ class SkooziQnAApi(remote.Service):
         elif len(model_users) == 1:
             return model_users[0]
         else:
-            logging.info("Retrieved more than 1 single app user model")
-            logging.debug("oauth_user_id: {} is repeated in app user model".format(oauth_user_id))
+            logging.info("{}: Retrieved more than 1 single app user model".format(TAG))
+            logging.debug("{}: oauth_user_id: {} is repeated in app user model".format(TAG, oauth_user_id))
             raise endpoints.InternalServerErrorException
 
     NEARBY_ID_RESOURCE = endpoints.ResourceContainer(
@@ -240,18 +173,21 @@ class SkooziQnAApi(remote.Service):
     @endpoints.method(NEARBY_ID_RESOURCE, QuestionMessageCollection, path='questions/list', http_method='GET',
                       name='questions.list')
     def questions_list(self, request):
+        """Gets a list of questions within the radius specified by the coordinates. Radius is in km. """
         query_lat = float(request.lat) if request.lat else 0
         query_lon = float(request.lon) if request.lon else 0
         query_radius = float(request.radius_km * 1000.0) if request.radius_km else 0
 
+        if not is_user_authenticated():
+            raise endpoints.UnauthorizedException
         if query_lat == 0 or query_lon == 0 or query_radius == 0:
             raise endpoints.BadRequestException("One of the required parameters (lat, lon, radius) is undefined")
+        if len(search.get_indexes()) == 0:
+            logging.error("{}: no indices exists. must investigate why".format(TAG))
+            raise endpoints.InternalServerErrorException
 
+        # FIXME: this should only return 100 results at a time
         query_string = "distance(location, geopoint(%f, %f)) <= %f" % (query_lat, query_lon, query_radius)
-
-        # build the index if not already done
-        if search.get_indexes().__len__() == 0:
-            rebuild_question_search_index()
         index = search.Index(name=ALL_QUESTIONS_INDEX)
         search_results = index.search(query_string)
 
@@ -259,32 +195,22 @@ class SkooziQnAApi(remote.Service):
         for search_item in search_results:
             retrieved_question = QuestionModel.get_by_id(long(search_item.doc_id))
             # condition accounts for the case when the search index is stale since it contains references to questions
-            # no longer in the datastore
+            # no longer in the database
             if retrieved_question is None:
-                logging.info("{} index has extra documents".format(ALL_QUESTIONS_INDEX))
+                logging.info("{}: {} index has extra documents".format(TAG, ALL_QUESTIONS_INDEX))
                 logging.debug("Following search document was not found in Question model")
                 logging.debug(retrieved_question)
-                # TODO: very aggressive strategy - need to find better way of pruning - maybe async task queue
                 prune_question_search_index()
             else:
                 search_questions.append(retrieved_question)
-        # questions = [QuestionModel.get_by_id(long(r.doc_id)) for r in results]
-
-        # for question in search_questions:
-        #     returned_questions.append(self.create_api_response_question(question))
-        # returned_questions=[]
-        # returned_questions.append(self.create_api_response_question(question) for question in search_questions)
 
         returned_questions = [self.create_api_response_question(question) for question in search_questions]
-
-        return_list = QuestionMessageCollection(questions=returned_questions)
-        return return_list
+        return QuestionMessageCollection(questions=returned_questions)
 
     @staticmethod
     def create_api_response_question(question):
         return QuestionMessage(
                 id_urlsafe=question.key.urlsafe(),
-                email=question.added_by.email(),
                 content=question.content,
                 timestamp_unix=int(time.mktime(question.timestamp.timetuple())),
                 locationLat=question.location.lat,
@@ -348,3 +274,38 @@ class SkooziQnAApi(remote.Service):
 application = endpoints.api_server([SkooziQnAApi])
 # Generate Android client library
 # python "C:\Program Files (x86)\Google\google_appengine\endpointscfg.py" get_client_lib java -bs gradle main.SkooziQnAApi
+
+
+#############################################
+# UNUSED, but potentially useful methods
+#############################################
+
+def authenticate_user():
+    """Quite possible that endpoints.get_current_user() may perform the authentication being performed here
+    Ref: https://cloud.google.com/appengine/docs/python/endpoints/auth -Adding a user check to methods- """
+
+    scope = 'https://www.googleapis.com/auth/userinfo.email'
+    logging.info('\noauth.get_current_user(%s)' % repr(scope))
+    try:
+        user = oauth.get_current_user(scope)
+        allowed_clients = ['407408718192.apps.googleusercontent.com'] # list your client ids here
+        token_audience = oauth.get_client_id(scope)
+        if token_audience not in allowed_clients:
+            raise oauth.OAuthRequestError('audience of token \'%s\' is not in allowed list (%s)'
+                                          % (token_audience, allowed_clients))
+
+        logging.info(' = %s\n' % user)
+        logging.info('- auth_domain = %s\n' % user.auth_domain())
+        logging.info('- email       = %s\n' % user.email())
+        logging.info('- nickname    = %s\n' % user.nickname())
+        logging.info('- user_id     = %s\n' % user.user_id())
+    except oauth.OAuthRequestError, e:
+        # # self.response.set_status(401)
+        # # self.response.write(' -> %s %s\n' % (e.__class__.__name__, e.message))
+        # logging.warn(traceback.format_exc())
+        logging.error(e.message)
+
+
+############################################
+# UNUSED, but potentially useful methods
+#############################################
