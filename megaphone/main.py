@@ -9,7 +9,9 @@ import logging
 import calendar, time
 # from application import helpers
 # from application import models
-from core import models
+from core.models import Greeting, GreetingCollection
+from core.models import AppUserModel, QuestionModel, QuestionMessage, QuestionMessageCollection
+from core.models import AnswerModel, AnswerMessage, AnswerMessageCollection, PostResponse, ResetResponse
 from datetime import datetime
 
 from protorpc import messages
@@ -22,19 +24,19 @@ from google.appengine.api import users, search, oauth
 # https://apis-explorer.appspot.com/apis-explorer/?base=http%3A%2F%2Flocalhost%3A8282%2F_ah%2Fapi#p/skooziqna/v0.1/
 package = 'Skoozi'
 TAG = 'main.py'
-RAISE_UNAUTHORIZED = False
 ALL_QUESTIONS_INDEX = 'all_questions'
-USER_INFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'
 
+RAISE_UNAUTHORIZED = True
+USER_INFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'
 WEB_CLIENT_ID = '26298710398-8jbuih8cj38ihi87bsloqkvur2mfut11.apps.googleusercontent.com'
 ANDROID_CLIENT_ID = '26298710398-7s5ldlh5s8p0e4njp6hq6i94n8h70tri.apps.googleusercontent.com'
 IOS_CLIENT_ID = 'fixme_when_ios_built'
 ANDROID_AUDIENCE = WEB_CLIENT_ID
 
-STORED_GREETINGS = models.GreetingCollection(items=[
-    models.Greeting(message='hello world!'),
-    models.Greeting(message='goodbye world!'),
-    models.Greeting(message='good job')
+STORED_GREETINGS = GreetingCollection(items=[
+    Greeting(message='hello world!'),
+    Greeting(message='goodbye world!'),
+    Greeting(message='good job')
 ])
 
 
@@ -74,14 +76,12 @@ def add_question_to_search_index_by_key(question_key):
         fields=[
             # search.HtmlField(name='comment', value='this is <em>marked up</em> text'),
             # search.NumberField(name='number_of_visits', value=7),
-            # search.TextField(name='customer', value='Joe Jackson'), # might be needed in the future to enable question title searching
-            search.DateField(name='timestamp', value=question.timestamp),  #watch out - no time information in search index
+            # search.TextField(name='content', value=question.content), # in future to enable question content searching
+            search.DateField(name='timestamp', value=question.timestamp),
             search.GeoField(name='location', value=search.GeoPoint(question.location.lat, question.location.lon))
             ])
-
-    # Index the document.
     try:
-        index.put(document)
+        index.put_async(document)
         logging.info("{}: added search document for Question key {}".format(TAG, question_key))
     except search.PutError, e:
         result = e.results[0]
@@ -98,7 +98,7 @@ def add_question_to_search_index_by_key(question_key):
 def rebuild_question_search_index():
     """Used to generate/build the geo-search index."""
     logging.info("Rebuilding question search index")
-    questions = models.QuestionModel.query()
+    questions = QuestionModel.query()
     [add_question_to_search_index(q) for q in questions]
 
 
@@ -116,7 +116,18 @@ def prune_question_search_index():
         doc_index.delete(document_ids)
 
 
+def is_user_authorized():
+    # https://cloud.google.com/appengine/docs/python/endpoints/auth
+    current_user = endpoints.get_current_user()
+    if current_user is None:
+        return False
+    return True
+
+
 def authenticate_user():
+    """Quite possible that endpoints.get_current_user() may perform the authentication being performed here
+    Ref: https://cloud.google.com/appengine/docs/python/endpoints/auth -Adding a user check to methods- """
+
     scope = 'https://www.googleapis.com/auth/userinfo.email'
     logging.info('\noauth.get_current_user(%s)' % repr(scope))
     try:
@@ -125,7 +136,7 @@ def authenticate_user():
         token_audience = oauth.get_client_id(scope)
         if token_audience not in allowed_clients:
             raise oauth.OAuthRequestError('audience of token \'%s\' is not in allowed list (%s)'
-                                      % (token_audience, allowed_clients))
+                                          % (token_audience, allowed_clients))
 
         logging.info(' = %s\n' % user)
         logging.info('- auth_domain = %s\n' % user.auth_domain())
@@ -147,23 +158,24 @@ def authenticate_admin_user():
 
 
 @endpoints.api(name='skooziqna', version='v0.1',
-               allowed_client_ids=[WEB_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID, endpoints.API_EXPLORER_CLIENT_ID],  # endpoints.API_EXPLORER_CLIENT_ID needed for testing against API Explorer in production.
+               # endpoints.API_EXPLORER_CLIENT_ID needed for testing against API Explorer in production.
+               allowed_client_ids=[WEB_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID, endpoints.API_EXPLORER_CLIENT_ID],
                audiences=[ANDROID_AUDIENCE], scopes=[endpoints.EMAIL_SCOPE])
 class SkooziQnAApi(remote.Service):
     """SkooziQnAAPI v0.1"""
 
-    @endpoints.method(message_types.VoidMessage, models.ResetResponse,
-                      path='resetindex', http_method='GET', name='admin.resetindex')
+    @endpoints.method(message_types.VoidMessage, ResetResponse, path='resetindex', http_method='GET',
+                      name='admin.resetindex')
     def reset_search_index(self, unused_request):
         if authenticate_admin_user():
             prune_question_search_index()
         else:
             message = 'User "%s" does not have admin rights.' % oauth.get_current_user(USER_INFO_SCOPE).nickname()
             raise endpoints.UnauthorizedException(message)
-        return models.ResetResponse(reset_status='SUCCESS')
+        return ResetResponse(reset_status='SUCCESS')
 
-    @endpoints.method(message_types.VoidMessage, models.GreetingCollection,
-                      path='hellogreeting', http_method='GET', name='greetings.listGreeting')
+    @endpoints.method(message_types.VoidMessage, GreetingCollection, path='hellogreeting', http_method='GET',
+                      name='greetings.listGreeting')
     def greetings_list(self, unused_request):
         return STORED_GREETINGS
 
@@ -171,8 +183,8 @@ class SkooziQnAApi(remote.Service):
         message_types.VoidMessage,
         id=messages.IntegerField(1, variant=messages.Variant.INT32))
 
-    @endpoints.method(ID_RESOURCE, models.Greeting,
-                      path='hellogreeting/{id}', http_method='GET', name='greetings.getGreeting')
+    @endpoints.method(ID_RESOURCE, Greeting, path='hellogreeting/{id}', http_method='GET',
+                      name='greetings.getGreeting')
     def greeting_get(self, request):
         try:
             # test = helpers.api_get_questions()
@@ -181,34 +193,43 @@ class SkooziQnAApi(remote.Service):
             raise endpoints.NotFoundException('Greeting %s not found.' %
                                         (request.id,))
 
-    @endpoints.method(models.QuestionMessage, models.PostResponse,
-                      path='question/insert', http_method='POST', name='question.insert')
+    @endpoints.method(QuestionMessage, PostResponse, path='question/insert', http_method='POST',
+                      name='question.insert')
     def question_insert(self, request):
-        # TODO: move this to a decorator maybe?
-        # https://cloud.google.com/appengine/docs/python/endpoints/auth
-        # ref section "Adding a user check to methods"
-        current_user = endpoints.get_current_user()
-        if RAISE_UNAUTHORIZED and current_user is None:
+        """Inserts the question to the datastore and makes it available for searching. Will also create user account
+        if it doesn't exist"""
+
+        current_user = endpoints.get_current_user()  # returns oauth authenticated user
+        if current_user is not None:
+            app_user = self.get_app_user()
+            question = QuestionModel(
+                added_by=app_user,
+                content=request.content,
+                # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
+                timestamp=datetime.fromtimestamp(request.timestamp_unix),
+                location=ndb.GeoPt(request.locationLat, request.locationLon))
+            question_key = question.put()
+            add_question_to_search_index_by_key(question_key)
+            response = PostResponse(post_key=question_key.urlsafe())
+            return response
+        else:
             raise endpoints.UnauthorizedException('Invalid token.')
 
+    @staticmethod
+    def get_app_user():
         # need to use oauth.get_current_user since endpoints.get_current_user doesn't return user_id
-        app_user = models.AppUserModel(
-            user_id=oauth.get_current_user(USER_INFO_SCOPE).user_id()
-        )
-        app_user.put_async()
-
-        question = models.QuestionModel(
-            added_by=app_user,
-            content=request.content,
-            # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
-            timestamp=datetime.fromtimestamp(request.timestamp_unix),
-            location=ndb.GeoPt(request.locationLat, request.locationLon)
-        )
-        question_key = question.put()
-        add_question_to_search_index_by_key(question_key)
-        response = models.PostResponse(post_key=question_key.urlsafe())
-        # return STORED_GREETINGS.items[2]
-        return response
+        oauth_user_id = oauth.get_current_user(USER_INFO_SCOPE).user_id()
+        model_users = AppUserModel.query(AppUserModel.user_id == oauth_user_id).fetch()
+        if len(model_users) == 0:
+            model_user = AppUserModel(user_id=oauth_user_id)
+            model_user.put_async()
+            return model_user
+        elif len(model_users) == 1:
+            return model_users[0]
+        else:
+            logging.info("Retrieved more than 1 single app user model")
+            logging.debug("oauth_user_id: {} is repeated in app user model".format(oauth_user_id))
+            raise endpoints.InternalServerErrorException
 
     NEARBY_ID_RESOURCE = endpoints.ResourceContainer(
         message_types.VoidMessage,
@@ -216,28 +237,29 @@ class SkooziQnAApi(remote.Service):
         lon=messages.FloatField(2),
         radius_km=messages.FloatField(3))
 
-    @endpoints.method(NEARBY_ID_RESOURCE, models.QuestionMessageCollection,
-                      path='questions/list', http_method='GET', name='questions.list')
+    @endpoints.method(NEARBY_ID_RESOURCE, QuestionMessageCollection, path='questions/list', http_method='GET',
+                      name='questions.list')
     def questions_list(self, request):
         query_lat = float(request.lat) if request.lat else 0
         query_lon = float(request.lon) if request.lon else 0
-        query_radius = float(request.radius_km * 1000.0) if request.radius_km else 50000.0 #default radius of 50km
+        query_radius = float(request.radius_km * 1000.0) if request.radius_km else 0
 
-        if query_lat == 0 or query_lon == 0:
-            # TODO: show all questions for Toronto
-            query_string = "timestamp > 2013-3-13"
-        else:
-            query_string = "distance(location, geopoint(%f, %f)) <= %f" % (query_lat, query_lon, query_radius)
+        if query_lat == 0 or query_lon == 0 or query_radius == 0:
+            raise endpoints.BadRequestException("One of the required parameters (lat, lon, radius) is undefined")
+
+        query_string = "distance(location, geopoint(%f, %f)) <= %f" % (query_lat, query_lon, query_radius)
 
         # build the index if not already done
         if search.get_indexes().__len__() == 0:
             rebuild_question_search_index()
-
-        search_questions = []
         index = search.Index(name=ALL_QUESTIONS_INDEX)
         search_results = index.search(query_string)
+
+        search_questions = []
         for search_item in search_results:
-            retrieved_question = models.QuestionModel.get_by_id(long(search_item.doc_id))
+            retrieved_question = QuestionModel.get_by_id(long(search_item.doc_id))
+            # condition accounts for the case when the search index is stale since it contains references to questions
+            # no longer in the datastore
             if retrieved_question is None:
                 logging.info("{} index has extra documents".format(ALL_QUESTIONS_INDEX))
                 logging.debug("Following search document was not found in Question model")
@@ -246,24 +268,31 @@ class SkooziQnAApi(remote.Service):
                 prune_question_search_index()
             else:
                 search_questions.append(retrieved_question)
-        # questions = [models.QuestionModel.get_by_id(long(r.doc_id)) for r in results]
+        # questions = [QuestionModel.get_by_id(long(r.doc_id)) for r in results]
 
-        returned_questions = []
-        for question in search_questions:
-            question_message = models.QuestionMessage(
+        # for question in search_questions:
+        #     returned_questions.append(self.create_api_response_question(question))
+        # returned_questions=[]
+        # returned_questions.append(self.create_api_response_question(question) for question in search_questions)
+
+        returned_questions = [self.create_api_response_question(question) for question in search_questions]
+
+        return_list = QuestionMessageCollection(questions=returned_questions)
+        return return_list
+
+    @staticmethod
+    def create_api_response_question(question):
+        return QuestionMessage(
                 id_urlsafe=question.key.urlsafe(),
                 email=question.added_by.email(),
                 content=question.content,
                 timestamp_unix=int(time.mktime(question.timestamp.timetuple())),
                 locationLat=question.location.lat,
                 locationLon=question.location.lon
-            )
-            returned_questions.append(question_message)
-        return_list = models.QuestionMessageCollection(questions=returned_questions)
-        return return_list
+        )
 
-    @endpoints.method(models.AnswerMessage, models.PostResponse,
-                      path='answer/insert', http_method='POST', name='answer.insert')
+    @endpoints.method(AnswerMessage, PostResponse, path='answer/insert', http_method='POST',
+                      name='answer.insert')
     def answer_insert(self, request):
         # TODO: move this to a decorator maybe?
         # https://cloud.google.com/appengine/docs/python/endpoints/auth
@@ -277,7 +306,7 @@ class SkooziQnAApi(remote.Service):
         user = users.User(request.email)
 
         question_key = ndb.Key(urlsafe=request.question_urlsafe)
-        answer = models.AnswerModel(
+        answer = AnswerModel(
             added_by = user,
             content = request.content,
             # http://stackoverflow.com/questions/1697815/how-do-you-convert-a-python-time-struct-time-object-into-a-datetime-object
@@ -287,22 +316,22 @@ class SkooziQnAApi(remote.Service):
         )
         answer_key = answer.put()
 
-        response = models.PostResponse(post_key=answer_key.urlsafe())
+        response = PostResponse(post_key=answer_key.urlsafe())
         return response
 
     Q_ID_RESOURCE = endpoints.ResourceContainer(
         message_types.VoidMessage,
         id=messages.StringField(1))
 
-    @endpoints.method(Q_ID_RESOURCE, models.AnswerMessageCollection,
-                      path='answers_for_question', http_method='GET', name='question.listAnswers')
+    @endpoints.method(Q_ID_RESOURCE, AnswerMessageCollection, path='answers_for_question', http_method='GET',
+                      name='question.listAnswers')
     def question_answers_list(self, request):
         # question_key = ndb.Key(urlsafe = 'ag5kZXZ-c2tvb3ppLTk1OXIaCxINUXVlc3Rpb25Nb2RlbBiAgICAgOidCgw')
         question_key = ndb.Key(urlsafe = request.id)
-        q_answers = models.AnswerModel.query(ancestor=question_key).fetch()
+        q_answers = AnswerModel.query(ancestor=question_key).fetch()
         a_list = []
         for answer in q_answers:
-            answer_message = models.AnswerMessage(
+            answer_message = AnswerMessage(
                 id_urlsafe = answer.key.urlsafe(),
                 question_urlsafe = question_key.urlsafe(),
                 email = answer.added_by.email(),
@@ -313,7 +342,7 @@ class SkooziQnAApi(remote.Service):
                 locationLon = answer.location.lon
             )
             a_list.append(answer_message)
-        return_list = models.AnswerMessageCollection(answers=a_list)
+        return_list = AnswerMessageCollection(answers=a_list)
         return return_list
 
 application = endpoints.api_server([SkooziQnAApi])
