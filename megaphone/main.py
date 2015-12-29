@@ -1,4 +1,4 @@
-"""SkoozieQnA API implemented using Google Cloud Endpoints.
+"""Skoozi   QnA API implemented using Google Cloud Endpoints.
 
 Defined here are the methods defined in the API.
 """
