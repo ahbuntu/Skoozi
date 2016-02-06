@@ -138,7 +138,7 @@ class SkooziQnAApi(remote.Service):
         if not is_user_authenticated():
             raise endpoints.UnauthorizedException('Invalid token.')
 
-        app_user = self.get_app_user()
+        app_user = self.get_app_user(request.user_nickname)
         question = QuestionModel(
             added_by=app_user,
             content=request.content,
@@ -151,12 +151,12 @@ class SkooziQnAApi(remote.Service):
 
 
     @staticmethod
-    def get_app_user():
+    def get_app_user(user_nickname="anonymous"):
         # need to use oauth.get_current_user since endpoints.get_current_user doesn't return user_id
         oauth_user_id = oauth.get_current_user(USER_INFO_SCOPE).user_id()
         model_users = AppUserModel.query(AppUserModel.user_id == oauth_user_id).fetch()
         if len(model_users) == 0:
-            model_user = AppUserModel(user_id=oauth_user_id)
+            model_user = AppUserModel(user_id=oauth_user_id, avatar_name=user_nickname)
             model_user.put_async()
             return model_user
         elif len(model_users) == 1:
@@ -214,7 +214,8 @@ class SkooziQnAApi(remote.Service):
                 content=question.content,
                 timestamp_unix=int(time.mktime(question.timestamp.timetuple())),
                 locationLat=question.location.lat,
-                locationLon=question.location.lon
+                locationLon=question.location.lon,
+                user_nickname=question.added_by.avatar_name
         )
 
     Q_ID_RESOURCE = endpoints.ResourceContainer(message_types.VoidMessage, id=messages.StringField(1))
@@ -238,7 +239,8 @@ class SkooziQnAApi(remote.Service):
                     # date_time_milis=time.mktime(datetimeobj.timetuple()) * 1000 + datetimeobj.microsecond / 1000
                     timestamp_unix=int(time.mktime(answer.timestamp.timetuple())),
                     locationLat=answer.location.lat,
-                    locationLon=answer.location.lon
+                    locationLon=answer.location.lon,
+                    user_nickname=answer.added_by.avatar_name
                 )
                 a_list.append(answer_message)
             return AnswerMessageCollection(answers=a_list)
@@ -251,7 +253,7 @@ class SkooziQnAApi(remote.Service):
         if not is_user_authenticated():
             raise endpoints.UnauthorizedException('Invalid token')
 
-        app_user = self.get_app_user()
+        app_user = self.get_app_user(request.user_nickname)
         try:
             question_key = ndb.Key(urlsafe=request.question_urlsafe)
             answer = AnswerModel(

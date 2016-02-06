@@ -29,29 +29,27 @@ class AnswerModel(ndb.Model):
     content = ndb.StringProperty(indexed=True)
     timestamp = ndb.DateTimeProperty(required=True)
     location = ndb.GeoPtProperty(required=False, indexed=True)
-    # for_question = ndb.StructuredProperty(Post)
 
 
 class QuestionMessage(messages.Message):
     """Post that stores a question """
     id_urlsafe = messages.StringField(1, required=False)
-    # app_user_id = messages.StringField(2, required=True)
     content = messages.StringField(2, required=True)
     timestamp_unix = messages.IntegerField(3, required=True)
     locationLat = messages.FloatField(4, required=True)
     locationLon = messages.FloatField(5, required=True)
+    user_nickname = messages.StringField(6, required=True)
 
 
 class AnswerMessage(messages.Message):
     """ Post that stores an answer """
     id_urlsafe = messages.StringField(1, required=False)
     question_urlsafe = messages.StringField(2, required=True)
-    # TODO: figure out if the email is really required
-    # app_user_id = messages.StringField(3, required=True)
     content = messages.StringField(4, required=True)
     timestamp_unix = messages.IntegerField(5, required=True)
     locationLat = messages.FloatField(6, required=True)
     locationLon = messages.FloatField(7, required=True)
+    user_nickname = messages.StringField(8, required=True)
 
 
 class StatusResponse(messages.Message):
